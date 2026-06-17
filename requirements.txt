@@ -1,0 +1,6 @@
+# 選擇權 — Python 套件需求 (Python 3.11)
+numpy==1.24.4
+scipy==1.10.1
+matplotlib==3.7.5
+# 註：American_pricing.ipynb 使用課程自備的 `rl` 套件 (reinforcement learning)，
+#     非 PyPI 標準套件，需另行取得；其餘 notebook 僅需上列套件。

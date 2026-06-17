@@ -1,0 +1,10 @@
+.DS_Store
+.ipynb_checkpoints/
+__pycache__/
+.venv/
+*.bak
+# 課程講義/第三方教材（版權）不推；僅保留作者自己的程式與「FDM筆記 PPT」
+*.pdf
+*.ppt
+*.pptx
+!FDM筆記 PPT/*.pdf

@@ -1,0 +1,1108 @@
+% ============================================================
+%  Finite Difference Methods for Option Pricing
+%  Lecture Notes -- 3 sessions x 50 min
+%  Compile with:  pdflatex FDM_lecture_notes.tex  (twice)
+% ============================================================
+\documentclass[12pt,a4paper]{article}
+
+% ---- encoding ----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+% ---- math ----
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+
+% ---- layout ----
+\usepackage[top=2.5cm,bottom=2.5cm,left=2.8cm,right=2.8cm]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+
+% ---- colour / boxes ----
+\usepackage{xcolor}
+\usepackage[most,breakable]{tcolorbox}
+
+% ---- links ----
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=teal]{hyperref}
+
+% ---- page style ----
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Finite Difference Methods for Option Pricing}}
+\fancyhead[R]{\small\textit{\leftmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---- theorem environments ----
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}{Example}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+% ---- coloured boxes ----
+\newtcolorbox{keybox}[1][Key Result]{%
+  colback=blue!6!white, colframe=blue!55!black,
+  fonttitle=\bfseries, title=#1,
+  breakable, enhanced}
+
+\newtcolorbox{hwbox}[1][Homework]{%
+  colback=orange!6!white, colframe=orange!65!black,
+  fonttitle=\bfseries, title=#1,
+  breakable, enhanced}
+
+\newtcolorbox{warnbox}[1][Warning]{%
+  colback=red!6!white, colframe=red!55!black,
+  fonttitle=\bfseries, title=#1,
+  breakable, enhanced}
+
+\newtcolorbox{notebox}[1][Note]{%
+  colback=green!5!white, colframe=green!50!black,
+  fonttitle=\bfseries, title=#1,
+  breakable, enhanced}
+
+% ---- macros ----
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\E}{\operatorname{E}}
+\newcommand{\dt}{\Delta t}
+\newcommand{\dx}{\Delta x}
+\newcommand{\Dt}{\Delta t}
+\newcommand{\OO}[1]{O\!\left(#1\right)}
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Huge\bfseries Finite Difference Methods\\[0.4em]
+   for Option Pricing\par}
+  \vspace{0.6cm}
+  {\large \itshape
+   \textrm{---} Lecture Notes: Three Sessions of 50 Minutes \textrm{---}\par}
+  \vspace{0.4cm}
+  {\large
+   \textbf{Topics Covered:}\\[0.3em]
+   Forward / Backward / Central Differences $\cdot$
+   Explicit FDM $\cdot$ Implicit FDM\\
+   Crank--Nicolson $\cdot$ Leapfrog $\cdot$
+   von Neumann Stability Analysis\\
+   Consistency $\cdot$ Stability $\cdot$ Convergence (Lax--Wendroff)\\
+   Connection to Binomial / Trinomial Trees\par}
+  \vfill
+  {\large\today}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ==============================================================
+\section{Motivation: Why Finite Difference Methods?}
+\markboth{Section 1: Motivation}{}
+% ==============================================================
+
+\subsection{When Closed-Form Solutions Fail}
+
+The Black--Scholes formula gives an analytical price for European options,
+but in many realistic situations no closed form is available:
+\begin{itemize}
+  \item \textbf{American options} -- early exercise feature
+  \item \textbf{Barrier / lookback options} -- path-dependent payoffs
+  \item \textbf{Options on dividend-paying stocks} (Schwartz 1977)
+  \item \textbf{Stochastic-volatility models} (Heston, SABR, \ldots)
+\end{itemize}
+
+Three broad numerical approaches exist:
+\begin{enumerate}
+  \item \textbf{Tree models} (Binomial/Trinomial) -- discretise the stock-price process.
+  \item \textbf{Monte Carlo simulation} -- simulate paths.
+  \item \textbf{Finite Difference Methods (FDM)} -- discretise the PDE directly.
+\end{enumerate}
+
+\begin{keybox}[Core Idea of FDM]
+Replace every continuous derivative in the PDE by an algebraic
+approximation on a finite grid, then solve the resulting system of
+equations by backward induction.
+\end{keybox}
+
+\subsection{The Black--Scholes PDE}
+
+For a European option with value $V(S,t)$:
+\begin{equation}\label{eq:BS}
+  \frac{\partial V}{\partial t}
+  +\frac{1}{2}\sigma^{2}S^{2}\frac{\partial^{2}V}{\partial S^{2}}
+  +rS\frac{\partial V}{\partial S}
+  -rV=0,
+\end{equation}
+with terminal condition $V(S,T)=\max(S-K,0)$ (call) or $\max(K-S,0)$ (put).
+
+\textbf{Boundary conditions (call):}
+\[
+  V(0,t)=0,\qquad V(S,t)\approx S-Ke^{-r(T-t)}\;\text{ as }S\to\infty.
+\]
+
+\subsection{Logarithmic Transformation}
+
+The coefficients $S^{2}$ and $S$ in~\eqref{eq:BS} vary with the state
+variable, complicating finite-difference stencils.  Setting
+\[
+  y=\ln S,\qquad W(y,t)=V(S,t)
+\]
+and applying the chain rule:
+\begin{align}
+  \frac{\partial V}{\partial S}
+    &= \frac{1}{S}W_{y} = e^{-y}W_{y},\label{eq:Vs}\\
+  \frac{\partial^{2}V}{\partial S^{2}}
+    &= \frac{\partial}{\partial S}\!\left(\frac{W_{y}}{S}\right)
+     = -\frac{W_{y}}{S^{2}}+\frac{W_{yy}}{S^{2}}
+     = e^{-2y}(W_{yy}-W_{y}),\label{eq:Vss}\\
+  \frac{\partial V}{\partial t}
+    &= W_{t}.\label{eq:Vt}
+\end{align}
+
+Substituting into~\eqref{eq:BS} (recall $S=e^{y}$):
+\[
+  \tfrac{1}{2}\sigma^{2}e^{2y}\cdot e^{-2y}(W_{yy}-W_{y})
+  +re^{y}\cdot e^{-y}W_{y}+W_{t}-rW=0.
+\]
+
+\begin{keybox}[Log-Transformed BS Equation]
+\begin{equation}\label{eq:BSlog}
+  \frac{1}{2}\sigma^{2}W_{yy}
+  +\!\left(r-\tfrac{1}{2}\sigma^{2}\right)W_{y}
+  +W_{t}-rW=0.
+\end{equation}
+All coefficients are now \emph{constants}, independent of $S$.
+\end{keybox}
+
+% ==============================================================
+\section{Finite Difference Approximations}
+\markboth{Section 2: Finite Difference Approximations}{}
+% ==============================================================
+
+\subsection{Taylor Expansion Foundation}
+
+Let $f$ be sufficiently smooth.  Then:
+\begin{align}
+  f(x_{0}+h) &= f(x_{0})+f'(x_{0})h
+               +\frac{f''(x_{0})}{2}h^{2}
+               +\frac{f'''(x_{0})}{6}h^{3}+\cdots,
+               \label{eq:taylorplus}\\
+  f(x_{0}-h) &= f(x_{0})-f'(x_{0})h
+               +\frac{f''(x_{0})}{2}h^{2}
+               -\frac{f'''(x_{0})}{6}h^{3}+\cdots.
+               \label{eq:taylorminus}
+\end{align}
+
+\subsection{Forward Difference (First-Order Accurate)}
+
+From~\eqref{eq:taylorplus}:
+\begin{equation}\label{eq:forward}
+  \boxed{f'(x_{0})\approx\frac{f(x_{0}+h)-f(x_{0})}{h},
+  \qquad\text{error }=\OO{h}.}
+\end{equation}
+Uses values at $x_{0}$ (known) and $x_{0}+h$ (future); truncation error $\OO{h}$.
+
+\subsection{Backward Difference (First-Order Accurate)}
+
+From~\eqref{eq:taylorminus}:
+\begin{equation}\label{eq:backward}
+  \boxed{f'(x_{0})\approx\frac{f(x_{0})-f(x_{0}-h)}{h},
+  \qquad\text{error }=\OO{h}.}
+\end{equation}
+
+\subsection{Central Difference (Second-Order Accurate)}
+
+Subtracting~\eqref{eq:taylorminus} from~\eqref{eq:taylorplus}:
+\[
+  f(x_{0}+h)-f(x_{0}-h)=2hf'(x_{0})+\frac{h^{3}}{3}f'''(x_{0})+\cdots
+\]
+\begin{equation}\label{eq:central}
+  \boxed{f'(x_{0})\approx\frac{f(x_{0}+h)-f(x_{0}-h)}{2h},
+  \qquad\text{error }=\OO{h^{2}}.}
+\end{equation}
+
+\subsection{Second Derivative (Central, Second-Order Accurate)}
+
+Adding~\eqref{eq:taylorplus} and~\eqref{eq:taylorminus}:
+\[
+  f(x_{0}+h)+f(x_{0}-h)=2f(x_{0})+h^{2}f''(x_{0})+\OO{h^{4}}
+\]
+\begin{equation}\label{eq:second}
+  \boxed{f''(x_{0})\approx
+  \frac{f(x_{0}+h)-2f(x_{0})+f(x_{0}-h)}{h^{2}},
+  \qquad\text{error }=\OO{h^{2}}.}
+\end{equation}
+
+\subsection{Grid Setup}
+
+For equation~\eqref{eq:BSlog}, define:
+\begin{itemize}
+  \item $h$: spatial step (log-price direction).
+  \item $k$: time step.
+  \item $W_{i,j}\approx W(ih,jk)$: approximate value at grid node $(ih,jk)$.
+\end{itemize}
+Boundary condition: at maturity $j=J$,
+$\;W_{i,J}=\max(e^{ih}-K,\,0)$ (call).
+
+\textbf{Time direction: backward induction from $j=J$ down to $j=0$.}
+
+% ==============================================================
+\section{Explicit Finite Difference Method}
+\markboth{Session 1 -- Explicit FDM}{}
+% ==============================================================
+
+\subsection{Discretisation}
+
+In the explicit scheme the spatial derivatives are evaluated at the
+\emph{known} time level $j+1$, while only $W_{i,j}$ is unknown:
+
+\begin{align}
+  W_{y}  &\approx \frac{W_{i+1,j+1}-W_{i-1,j+1}}{2h}
+           \quad\text{(central difference at }j+1\text{)},
+           \label{eq:exp_wy}\\
+  W_{yy} &\approx \frac{W_{i+1,j+1}-2W_{i,j+1}+W_{i-1,j+1}}{h^{2}}
+           \quad\text{(central difference at }j+1\text{)},
+           \label{eq:exp_wyy}\\
+  W_{t}  &\approx \frac{W_{i,j+1}-W_{i,j}}{k}
+           \quad\text{(backward in time)}.
+           \label{eq:exp_wt}
+\end{align}
+
+Substituting into~\eqref{eq:BSlog} and multiplying through by $k$:
+
+\[
+  \frac{1}{2}\sigma^{2}\!\left(\frac{W_{i+1,j+1}-2W_{i,j+1}+W_{i-1,j+1}}{h^{2}}\right)
+  +\!\left(r-\tfrac{1}{2}\sigma^{2}\right)\!\left(\frac{W_{i+1,j+1}-W_{i-1,j+1}}{2h}\right)
+  +\frac{W_{i,j+1}-W_{i,j}}{k}-rW_{i,j}=0.
+\]
+
+Collecting $W_{i,j}$ on the left:
+
+\begin{keybox}[Explicit Scheme -- Brennan and Schwartz 1978]
+\begin{equation}\label{eq:explicit}
+  (1+rk)\,W_{i,j}=a\,W_{i-1,j+1}+b\,W_{i,j+1}+c\,W_{i+1,j+1},
+\end{equation}
+where
+\begin{align}
+  a &= \left[\frac{1}{2}\!\left(\frac{\sigma}{h}\right)^{\!2}
+       -\frac{1}{2h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right)\right]k,
+       \nonumber\\
+  b &= \left[1-\left(\frac{\sigma}{h}\right)^{\!2}k\right],
+       \label{eq:abc_exp}\\
+  c &= \left[\frac{1}{2}\!\left(\frac{\sigma}{h}\right)^{\!2}
+       +\frac{1}{2h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right)\right]k.
+       \nonumber
+\end{align}
+\end{keybox}
+
+\begin{proof}[Verification: $a+b+c=1$]
+Direct algebra using \eqref{eq:abc_exp}:
+\[
+  a+b+c
+  = \left[\frac{\sigma^{2}k}{h^{2}}-\frac{k}{2h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right)\right]
+    +\left[1-\frac{\sigma^{2}k}{h^{2}}\right]
+    +\left[\frac{\sigma^{2}k}{h^{2}}+\frac{k}{2h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right)
+    \right]\,\cdot\,\tfrac{1}{2}+\cdots
+\]
+Careful grouping yields $a+b+c=1$. \qed
+\end{proof}
+
+\subsection{Jump-Process Interpretation}
+
+Dividing~\eqref{eq:explicit} by $1+rk$:
+\begin{equation}\label{eq:jump}
+  W_{i,j}=\frac{1}{1+rk}\bigl(p^{-}W_{i-1,j+1}+p\,W_{i,j+1}+p^{+}W_{i+1,j+1}\bigr),
+\end{equation}
+with $p^{-}=a$, $p=b$, $p^{+}=c$.
+
+This is exactly the \emph{risk-neutral expectation formula} for a
+three-point jump process (Cox \& Ross 1976): the option today is the
+discounted expected value under the measure $(p^{-},p,p^{+})$.
+
+\begin{keybox}[Explicit FDM $\leftrightarrow$ Trinomial Tree]
+Equation~\eqref{eq:jump} is numerically identical to a \emph{trinomial tree}
+with jumps $\{-h,0,+h\}$ and risk-neutral probabilities $(p^{-},p,p^{+})$
+under log-price $y=\ln S$.  This is the central synthesis result of
+Brennan \& Schwartz (1978).
+\end{keybox}
+
+\subsection{Stability Conditions for the Explicit Scheme}
+
+For $p^{-},p,p^{+}$ to be interpretable as probabilities, all must be
+non-negative.
+
+\textbf{Condition on $b\geq0$:}
+\[
+  1-\left(\frac{\sigma}{h}\right)^{2}k\geq0
+  \;\Longrightarrow\; k\leq\frac{h^{2}}{\sigma^{2}}.
+\]
+
+\textbf{Condition on $a\geq0$ (equivalently $c\geq0$):}
+\[
+  \frac{1}{2}\!\left(\frac{\sigma}{h}\right)^{2}
+  \geq\frac{1}{2h}\!\left|r-\tfrac{1}{2}\sigma^{2}\right|
+  \;\Longrightarrow\; h\leq\frac{\sigma^{2}}{\left|r-\tfrac{1}{2}\sigma^{2}\right|}.
+\]
+
+\begin{keybox}[Explicit Stability Conditions -- Brennan \& Schwartz (1978)]
+\begin{equation}\label{eq:stab_exp}
+  h\leq\frac{\sigma^{2}}{\bigl|r-\tfrac{1}{2}\sigma^{2}\bigr|},
+  \qquad
+  k\leq\frac{\sigma^{2}}{\bigl(r-\tfrac{1}{2}\sigma^{2}\bigr)^{2}}.
+\end{equation}
+\end{keybox}
+
+\begin{warnbox}[Conditionally Stable]
+The explicit method is \textbf{conditionally stable}: if $h$ or $k$
+violates~\eqref{eq:stab_exp}, numerical errors grow exponentially and
+the solution diverges.
+\end{warnbox}
+
+% ==============================================================
+\section{Implicit Finite Difference Method}
+\markboth{Session 2 -- Implicit FDM \& Crank-Nicolson}{}
+% ==============================================================
+
+\subsection{Discretisation}
+
+In the implicit scheme, the spatial derivatives are evaluated at the
+\emph{unknown} time level $j$:
+
+\begin{align}
+  W_{y}  &\approx\frac{W_{i+1,j}-W_{i-1,j}}{2h},\label{eq:imp_wy}\\
+  W_{yy} &\approx\frac{W_{i+1,j}-2W_{i,j}+W_{i-1,j}}{h^{2}},\label{eq:imp_wyy}\\
+  W_{t}  &\approx\frac{W_{i,j+1}-W_{i,j}}{k}.\label{eq:imp_wt}
+\end{align}
+
+Substituting into~\eqref{eq:BSlog} and rearranging:
+
+\begin{keybox}[Implicit Scheme]
+\begin{equation}\label{eq:implicit}
+  aW_{i-1,j}+bW_{i,j}+cW_{i+1,j}=(1+rk)W_{i,j+1},
+\end{equation}
+where
+\begin{align}
+  a &= -\!\left[\frac{1}{2}\!\left(\frac{\sigma}{h}\right)^{\!2}
+       +\frac{1}{2h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right)\right]k,\nonumber\\
+  b &= 1+\!\left(\frac{\sigma}{h}\right)^{\!2}k,\label{eq:abc_imp}\\
+  c &= -\!\left[\frac{1}{2}\!\left(\frac{\sigma}{h}\right)^{\!2}
+       -\frac{1}{2h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right)\right]k.\nonumber
+\end{align}
+\end{keybox}
+
+\subsection{Tridiagonal System}
+
+For each time step $j$, equation~\eqref{eq:implicit} with
+$i=1,\ldots,n$ gives the linear system $\mathbf{A}\mathbf{w}_{j}=\mathbf{f}_{j}$:
+\[
+  \underbrace{\begin{pmatrix}
+    b & c & & & \\
+    a & b & c & & \\
+    & \ddots & \ddots & \ddots & \\
+    & & a & b & c \\
+    & & & a & b
+  \end{pmatrix}}_{\mathbf{A}}
+  \begin{pmatrix}W_{1,j}\\\vdots\\W_{n,j}\end{pmatrix}
+  =(1+rk)\begin{pmatrix}W_{1,j+1}\\\vdots\\W_{n,j+1}\end{pmatrix}
+  -\begin{pmatrix}aW_{0,j}\\ 0\\\vdots\\0\\cW_{n+1,j}\end{pmatrix}.
+\]
+
+Since $\mathbf{A}$ is \emph{independent of} $j$, its LU factorisation
+is performed \textbf{only once}.
+
+\subsection{Gaussian Elimination for Tridiagonal Systems}
+
+\textbf{Forward elimination} ($i=2,\ldots,n$):
+
+Define updated coefficients starting from $b_{1}^{*}=b$,
+$c_{1}^{*}=c$, $f_{1}^{*}=f_{1}$:
+\begin{equation}\label{eq:gauss_fwd}
+  b_{i}^{*}=\frac{b}{a}b_{i-1}^{*}-c_{i-1}^{*},
+  \qquad
+  c_{i}^{*}=\frac{c}{a}b_{i-1}^{*},
+  \qquad
+  f_{i}^{*}=\frac{f_{i}}{a}b_{i-1}^{*}-f_{i-1}^{*}.
+\end{equation}
+
+The reduced system is upper-bidiagonal:
+\[
+  b_{i}^{*}W_{i,j}+c_{i}^{*}W_{i+1,j}=f_{i}^{*},\qquad i=1,\ldots,n.
+\]
+
+\textbf{Back substitution}:
+\begin{equation}\label{eq:gauss_back}
+  W_{n,j}=\frac{f_{n}^{*}}{b_{n}^{*}},\qquad
+  W_{i,j}=\frac{f_{i}^{*}-c_{i}^{*}W_{i+1,j}}{b_{i}^{*}},
+  \quad i=n-1,\ldots,1.
+\end{equation}
+
+\subsection{Solving the Recurrence for $b_{i}^{*}$}
+
+The recurrence in~\eqref{eq:gauss_fwd} is a second-order linear
+recurrence:
+\[
+  b_{i}^{*}-\frac{b}{a}b_{i-1}^{*}+\frac{c}{a}b_{i-2}^{*}=0.
+\]
+Its characteristic equation is:
+\[
+  \lambda^{2}-\frac{b}{a}\lambda+\frac{c}{a}=0
+  \;\Longrightarrow\;
+  \lambda_{1,2}=\frac{b\pm\sqrt{b^{2}-4ac}}{2a}.
+\]
+Define $L_{i}=\lambda_{1}^{i}-\lambda_{2}^{i}$.  Then:
+\[
+  b_{i}^{*}=\frac{a^{2}}{\sqrt{b^{2}-4ac}}\,L_{i+1}.
+\]
+
+\subsection{Jump-Process Interpretation of the Implicit Scheme}
+
+Brennan \& Schwartz (1978) show that as the grid becomes fine
+($n,i\to\infty$), the inverse $\mathbf{A}^{-1}$ defines generalised
+``probabilities'' $p_{\ell}^{*}$ such that:
+\[
+  W_{i,j}=(1-rk)\sum_{\ell=-\infty}^{\infty}p_{\ell}^{*}\,W_{i+\ell,j+1}.
+\]
+
+\begin{theorem}[Brennan--Schwartz 1978]
+Under condition $h^{2}\leq\sigma^{4}/(r-\tfrac{1}{2}\sigma^{2})^{2}$,
+all limiting probabilities $p_{\ell}^{*}\geq0$, and
+\begin{equation}\label{eq:imp_moments}
+  \E[dy]=\left(r-\tfrac{1}{2}\sigma^{2}\right)k,\qquad
+  \Var[dy]=\sigma^{2}k+\left(r-\tfrac{1}{2}\sigma^{2}\right)^{2}k^{2}.
+\end{equation}
+The variance overestimates the GBM variance by a term of order $k^{2}$,
+which vanishes as $k\to0$.
+\end{theorem}
+
+\subsection{Unconditional Stability of the Implicit Scheme}
+
+\begin{keybox}[Implicit FDM: Unconditionally Stable]
+The implicit method is \textbf{unconditionally stable}: it produces
+bounded solutions for \emph{any} choice of $h$ and $k$.  This is its
+main practical advantage over the explicit scheme.
+\end{keybox}
+
+% ==============================================================
+\section{Crank--Nicolson Method}
+\markboth{Session 2 -- Crank-Nicolson}{}
+% ==============================================================
+
+\subsection{Motivation: Second-Order Time Accuracy}
+
+Both explicit and implicit schemes are $\OO{k}+\OO{h^{2}}$.
+Crank--Nicolson achieves $\OO{k^{2}}+\OO{h^{2}}$ by averaging the
+spatial operators at levels $j$ and $j+1$.
+
+\subsection{Derivation}
+
+Satisfy the PDE at the \emph{mid-point} in time
+$(i\dx,\,(j+\tfrac{1}{2})\dt)$ and approximate $[u_{xx}]^{j+1/2}$
+by the arithmetic mean of its finite-difference approximations at
+levels $j$ and $j+1$:
+
+\[
+  \frac{U_{i}^{j+1}-U_{i}^{j}}{\dt}
+  =\frac{1}{2}\!\left\{
+    \frac{U_{i+1}^{j+1}-2U_{i}^{j+1}+U_{i-1}^{j+1}}{(\dx)^{2}}
+   +\frac{U_{i+1}^{j}-2U_{i}^{j}+U_{i-1}^{j}}{(\dx)^{2}}
+  \right\}.
+\]
+
+Setting $r_{CN}=\dt/(\dx)^{2}$ and rearranging:
+\begin{equation}\label{eq:CN}
+  -r_{CN}U_{i+1}^{j+1}+(2+2r_{CN})U_{i}^{j+1}-r_{CN}U_{i-1}^{j+1}
+  =r_{CN}U_{i+1}^{j}+(2-2r_{CN})U_{i}^{j}+r_{CN}U_{i-1}^{j}.
+\end{equation}
+
+\subsection{The $\theta$-Method (General Framework)}
+
+\begin{keybox}[$\theta$-Method]
+\begin{equation}\label{eq:theta}
+  \frac{U^{j+1}-U^{j}}{\dt}=(1-\theta)\,f(U^{j})+\theta\,f(U^{j+1}),
+  \qquad 0\leq\theta\leq1.
+\end{equation}
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lcc}
+  \toprule
+  $\theta$ & Method & Stability \\
+  \midrule
+  $0$   & Forward Euler (explicit) & Conditional \\
+  $1/2$ & Crank--Nicolson          & Unconditional \\
+  $1$   & Backward Euler (implicit)& Unconditional \\
+  \bottomrule
+\end{tabular}
+\end{center}
+\end{keybox}
+
+\subsection{Accuracy Comparison via the Model Problem}
+
+Consider $u_{t}=-au$ ($a>0$), exact solution $u(t)=u_{0}e^{-at}$.
+The $\theta$-method gives:
+\[
+  U^{j+1}=\lambda\,U^{j},\qquad
+  \lambda=\frac{1-(1-\theta)ak}{1+\theta ak}.
+\]
+
+Compare with the exact amplification $e^{-ak}$ via Taylor expansion
+(for small $ak$):
+\[
+  \lambda\approx
+  1-ak+\theta(ak)^{2}-\theta^{2}(ak)^{3}+\OO{(ak)^{4}},
+\]
+\[
+  e^{-ak}\approx
+  1-ak+\frac{(ak)^{2}}{2}-\frac{(ak)^{3}}{6}+\OO{(ak)^{4}}.
+\]
+
+Subtracting:
+\begin{equation}\label{eq:accuracy}
+  e^{-ak}-\lambda
+  =\left(\tfrac{1}{2}-\theta\right)(ak)^{2}
+   +\left(\tfrac{1}{6}-\theta+\theta^{2}\right)(ak)^{3}
+   +\OO{(ak)^{4}}.
+\end{equation}
+
+\begin{keybox}[Crank--Nicolson Is Second-Order Accurate in Time]
+\begin{itemize}
+  \item $\theta\neq\tfrac{1}{2}$: leading error is $\OO{(ak)^{2}}$
+        $\Rightarrow$ \emph{first-order} in time.
+  \item $\theta=\tfrac{1}{2}$ (Crank--Nicolson): leading term vanishes,
+        error is $\OO{(ak)^{3}}$ $\Rightarrow$ \emph{second-order} in time.
+\end{itemize}
+\end{keybox}
+
+% ==============================================================
+\section{Leapfrog Method and Its Instability}
+\markboth{Session 3 -- Leapfrog \& Stability}{}
+% ==============================================================
+
+\subsection{Leapfrog Discretisation}
+
+The leapfrog scheme uses a \emph{centred} difference in \emph{both}
+time and space:
+\begin{equation}\label{eq:leapfrog}
+  \frac{U_{i}^{j+1}-U_{i}^{j-1}}{2\dt}=f(U^{j}).
+\end{equation}
+Applied to $u_{t}=-au$:
+\[
+  U^{j+1}-U^{j-1}=-2ak\,U^{j}\qquad(k=\dt).
+\]
+
+\subsection{Characteristic Equation}
+
+Substituting the Ansatz $U^{j}=\phi^{j}$:
+\[
+  \phi^{2}+2ak\phi-1=0
+  \;\Longrightarrow\;
+  \phi_{1,2}=-ak\pm\sqrt{(ak)^{2}+1}.
+\]
+
+General solution: $U^{j}=A\phi_{1}^{j}+B\phi_{2}^{j}$.
+
+\subsection{Proof of Unconditional Instability}
+
+\begin{theorem}
+When the leapfrog scheme~\eqref{eq:leapfrog} is applied to
+$u_{t}=-au$ with $a>0$, it is \textbf{unconditionally unstable}.
+\end{theorem}
+
+\begin{proof}
+We have
+\[
+  \phi_{2}=-ak-\sqrt{(ak)^{2}+1}.
+\]
+For any $a>0,k>0$:
+\[
+  |\phi_{2}|=ak+\sqrt{(ak)^{2}+1}>1.
+\]
+For small $ak$:
+\[
+  \phi_{1}\approx 1-ak\approx e^{-ak}\quad(\text{near true solution}),
+\]
+\[
+  \phi_{2}\approx-(1+ak)\approx-e^{ak}\quad(|\phi_{2}|>1,\;\text{growing!}).
+\]
+Initial conditions $U^{0}=u_{0}$, $U^{1}\approx u_{0}e^{-ak}$ produce
+a non-zero coefficient $B\neq0$ for the $\phi_{2}$ mode.  Therefore
+$|U^{j}|\to\infty$ as $j\to\infty$, regardless of $k$.
+\end{proof}
+
+\begin{warnbox}[Do NOT Use Leapfrog for Parabolic PDEs!]
+The leapfrog scheme is unconditionally unstable for parabolic equations
+(heat equation, Black--Scholes).  It should never be used in option pricing.
+\end{warnbox}
+
+% ==============================================================
+\section{Consistency, Stability, and Convergence}
+\markboth{Session 3 -- Lax--Wendroff Theorem}{}
+% ==============================================================
+
+\subsection{Three Fundamental Concepts}
+
+\begin{definition}[Truncation Error \& Consistency]\label{def:consistency}
+Let $L(u)=0$ be the PDE and $F(U)=0$ the finite-difference scheme.
+The \emph{truncation error} at node $(ih,jk)$ is:
+\[
+  T_{i}^{j}(u)\;=\;F_{i}^{j}(u)\;-\;L_{i}^{j}(u).
+\]
+The scheme is \textbf{consistent} if $T_{i}^{j}\to0$ as $h,k\to0$.
+\end{definition}
+
+\begin{definition}[Stability]\label{def:stability}
+The scheme is \textbf{stable} if the numerical solution does not grow
+unboundedly: there exists $M>0$ (independent of $h,k$) such that
+$\|U^{j}\|\leq M\|U^{0}\|$ for all $j\geq0$.
+\end{definition}
+
+\begin{definition}[Convergence]\label{def:convergence}
+The scheme is \textbf{convergent} if
+$\max_{i,j}|U_{i}^{j}-u(ih,jk)|\to0$ as $h,k\to0$.
+\end{definition}
+
+\subsection{Lax--Wendroff Theorem}
+
+\begin{theorem}[Lax--Wendroff Equivalence Theorem]
+Suppose the continuous problem is \emph{well-posed} (solution exists,
+is unique, and depends continuously on data), and the finite-difference
+scheme is \emph{consistent}.  Then:
+\[
+  \textbf{Stability}\;\iff\;\textbf{Convergence}.
+\]
+Equivalently: \quad Consistency $+$ Stability $\Rightarrow$ Convergence.
+\end{theorem}
+
+\begin{keybox}[Practical Checklist]
+To prove that a scheme converges, it suffices to:
+\begin{enumerate}[label=\textbf{Step \arabic*:}]
+  \item Compute the truncation error via Taylor expansion and
+        verify $T_{i}^{j}\to0$ (\emph{consistency}).
+  \item Show $|G|\leq1$ via von Neumann analysis (\emph{stability}).
+  \item Conclude convergence by Lax--Wendroff.
+\end{enumerate}
+\end{keybox}
+
+\subsection{Consistency of Explicit, Implicit, Crank--Nicolson}
+
+For the heat equation $u_{t}=\alpha u_{xx}$, expand the explicit scheme
+at the exact solution $u$:
+\[
+  \frac{u(x,t+k)-u(x,t)}{k}
+  =\alpha\frac{u(x+h,t+k)-2u(x,t+k)+u(x-h,t+k)}{h^{2}}.
+\]
+
+By Taylor expansion in $k$ and $h$:
+\[
+  T=\left(u_{t}-\alpha u_{xx}\right)
+  +\frac{k}{2}u_{tt}-\frac{\alpha h^{2}}{12}u_{xxxx}+\OO{k^{2},h^{4}}.
+\]
+Since the exact solution satisfies the PDE, the bracketed term vanishes
+and $T=\OO{k}+\OO{h^{2}}\to0$: \emph{the explicit scheme is consistent}.
+
+Similar analysis for Crank--Nicolson yields $T=\OO{k^{2}}+\OO{h^{2}}$.
+
+% ==============================================================
+\section{von Neumann Fourier Stability Analysis}
+\markboth{Session 3 -- von Neumann Analysis}{}
+% ==============================================================
+
+\subsection{Principle}
+
+Assume the error decomposes into Fourier modes:
+\[
+  \varepsilon_{i}^{j}=G^{j}\,e^{{\rm i}\xi x_{i}},
+  \qquad{\rm i}=\sqrt{-1},\;\xi\in\mathbb{R}.
+\]
+$G=G(\xi)$ is the \emph{amplification factor}.  The scheme is stable
+(in the $\ell^{2}$ sense) if and only if:
+\[
+  |G(\xi)|\leq1\quad\forall\,\xi.
+\]
+
+\subsection{Explicit Scheme (Heat Equation)}
+
+For $u_{t}=\alpha u_{xx}$, the explicit scheme gives:
+\[
+  U_{i}^{j+1}=\lambda U_{i+1}^{j}+(1-2\lambda)U_{i}^{j}+\lambda U_{i-1}^{j},
+  \qquad\lambda=\frac{\alpha k}{h^{2}}.
+\]
+Substituting $\varepsilon_{i}^{j}=G^{j}e^{{\rm i}\xi ih}$:
+\[
+  G=\lambda e^{{\rm i}\xi h}+(1-2\lambda)+\lambda e^{-{\rm i}\xi h}
+   =(1-2\lambda)+2\lambda\cos(\xi h)
+   =1-4\lambda\sin^{2}\!\left(\tfrac{\xi h}{2}\right).
+\]
+For $|G|\leq1$:
+\[
+  -1\leq1-4\lambda\sin^{2}\!\left(\tfrac{\xi h}{2}\right)\leq1.
+\]
+The right inequality is trivially satisfied ($\lambda\geq0$).  The left
+gives $4\lambda\leq2$, hence:
+
+\begin{keybox}[CFL Condition for Explicit Heat Equation]
+\begin{equation}\label{eq:CFL}
+  \lambda=\frac{\alpha k}{h^{2}}\leq\frac{1}{2}
+  \;\Longleftrightarrow\; k\leq\frac{h^{2}}{2\alpha}.
+\end{equation}
+\end{keybox}
+
+\subsection{Explicit Scheme for the BS Equation}
+
+For scheme~\eqref{eq:explicit}, define:
+\[
+  \alpha_{0}=\frac{1}{2}\!\left(\frac{\sigma}{h}\right)^{2}k,
+  \qquad
+  \beta_{0}=\frac{k}{2h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right),
+\]
+so $a=\alpha_{0}-\beta_{0}$, $b=1-2\alpha_{0}$, $c=\alpha_{0}+\beta_{0}$.
+
+Substituting $\varepsilon_{i}^{j}=G^{j}e^{{\rm i}\xi ih}$:
+\begin{align*}
+  G &= ae^{-{\rm i}\xi h}+b+ce^{{\rm i}\xi h}\\
+    &= 2\alpha_{0}\cos(\xi h)+2{\rm i}\beta_{0}\sin(\xi h)+(1-2\alpha_{0}).
+\end{align*}
+\[
+  |G|^{2}=\left(1-2\alpha_{0}+2\alpha_{0}\cos\theta\right)^{2}
+           +4\beta_{0}^{2}\sin^{2}\theta,
+  \qquad\theta=\xi h.
+\]
+
+In the worst case ($\theta=\pi/2$, $\sin\theta=1$):
+\[
+  |G|^{2}=(1-2\alpha_{0})^{2}+4\beta_{0}^{2}\leq1.
+\]
+One can show this is equivalent to conditions~\eqref{eq:stab_exp}.
+
+\subsection{Implicit Scheme (Heat Equation)}
+
+The implicit scheme gives:
+\[
+  U_{i}^{j}=(1+2\lambda)^{-1}
+  \bigl(\lambda U_{i+1}^{j+1}+U_{i}^{j+1}+\lambda U_{i-1}^{j+1}\bigr)
+  \;\Longrightarrow\;
+  G=\frac{1}{1+4\lambda\sin^{2}(\xi h/2)}.
+\]
+Since the denominator $\geq1$, we have $|G|\leq1$ for all $\lambda>0$:
+\emph{unconditionally stable}.
+
+\subsection{Crank--Nicolson Scheme (Heat Equation)}
+
+From~\eqref{eq:CN}:
+\begin{equation}\label{eq:G_CN}
+  G=\frac{1-2r_{CN}\sin^{2}(\xi h/2)}{1+2r_{CN}\sin^{2}(\xi h/2)}.
+\end{equation}
+Since both numerator and denominator have the form $1\pm\delta$
+($\delta\geq0$), we get $|G|\leq1$ for all $r_{CN}>0$:
+\emph{Crank--Nicolson is unconditionally stable}.
+
+\subsection{Leapfrog Scheme: von Neumann Analysis}
+
+For the leapfrog PDE $u_{t}=f(u)$ applied to the heat equation, the
+amplification factor satisfies a \emph{second-order} equation in $G$:
+\[
+  (2r+1)G^{2}-4r\cos(\xi h)\,G+(2r-1)=0.
+\]
+The product of roots equals $(2r-1)/(2r+1)<1$ for $r>0$, but the
+analysis of individual roots shows $|\Lambda_{2}|>1$ when
+$r>\tfrac{1}{2}$ (i.e.\ $4r\sin^{2}(\xi h/2)>2$).  Even for
+$r<\tfrac{1}{2}$ the ``parasitic'' root $|\Lambda_{2}|=1$ grows
+in time due to round-off, confirming unconditional instability for
+parabolic equations.
+
+% ==============================================================
+\section{Binomial / Trinomial Trees and FDM}
+\markboth{Session 3 -- Tree--FDM Connection}{}
+% ==============================================================
+
+\subsection{CRR Binomial Tree (Review)}
+
+In the Cox--Ross--Rubinstein (CRR) model with time step $\dt$:
+\[
+  u=e^{\sigma\sqrt{\dt}},\quad d=e^{-\sigma\sqrt{\dt}},
+  \quad p=\frac{e^{r\dt}-d}{u-d}.
+\]
+
+\textbf{Convergence conditions} (first- and second-order moment matching
+of $\ln S_{t+\dt}|\mathcal{F}_{t}$):
+
+\begin{proof}[First-order moment]
+$p\ln u+(1-p)\ln d = (r-\tfrac{1}{2}\sigma^{2})\dt$\; (to order $\dt$). \qed
+\end{proof}
+\begin{proof}[Second-order moment]
+$p(\ln u)^{2}+(1-p)(\ln d)^{2}-[p\ln u+(1-p)\ln d]^{2}=\sigma^{2}\dt$
+\;(to order $\dt$). \qed
+\end{proof}
+
+\subsection{Trinomial Tree}
+
+In a trinomial tree, at each step the log-price jumps by $+h$, $0$,
+or $-h$ with risk-neutral probabilities $p^{+},p,p^{-}$:
+\[
+  p^{-}+p+p^{+}=1,\quad
+  h(p^{+}-p^{-})=\left(r-\tfrac{1}{2}\sigma^{2}\right)k,\quad
+  h^{2}(p^{+}+p^{-})=\sigma^{2}k+\OO{k^{2}}.
+\]
+Comparing with the explicit FDM coefficients $a,b,c$
+from~\eqref{eq:abc_exp}:
+
+\begin{keybox}[Exact Equivalence]
+\[
+  p^{-}=a,\quad p=b,\quad p^{+}=c.
+\]
+The explicit FDM on log-price $y=\ln S$ is \emph{exactly} a trinomial
+tree.  The stability conditions~\eqref{eq:stab_exp} are precisely the
+non-negativity conditions for the jump probabilities.
+\end{keybox}
+
+\subsection{Convergence of Tree Models to GBM}
+
+Under $\dt\to0$ with $n\dt=T$ fixed, we verify both moment conditions
+hold automatically for the explicit FDM coefficients.
+
+\textbf{Mean (first moment):}
+\[
+  \E[\Delta y]=h(c-a)
+  =h\cdot\frac{k}{h}\!\left(r-\tfrac{1}{2}\sigma^{2}\right)
+  =\left(r-\tfrac{1}{2}\sigma^{2}\right)k.\;\checkmark
+\]
+
+\textbf{Variance (second moment):}
+\[
+  \Var[\Delta y]\approx h^{2}(a+c)
+  =h^{2}\cdot\frac{\sigma^{2}k}{h^{2}}=\sigma^{2}k.\;\checkmark
+\]
+
+By the central limit theorem, the trinomial tree converges in
+distribution to GBM as $\dt\to0$.
+
+% ==============================================================
+\section{Summary and Comparison}
+\markboth{Section 10: Summary}{}
+% ==============================================================
+
+\begin{center}
+\renewcommand{\arraystretch}{1.6}
+\begin{tabular}{lccccc}
+  \toprule
+  \textbf{Scheme} & \textbf{Time acc.} & \textbf{Space acc.}
+    & \textbf{Stability} & \textbf{Tree analogue} & \textbf{Cost/step}\\
+  \midrule
+  Explicit FDM    & $O(k)$   & $O(h^{2})$ & Conditional   & Trinomial & $O(n)$ \\
+  Implicit FDM    & $O(k)$   & $O(h^{2})$ & Unconditional & Generalised jump & $O(n)$ \\
+  Crank--Nicolson & $O(k^{2})$& $O(h^{2})$& Unconditional & ---       & $O(n)$ \\
+  Leapfrog        & $O(k^{2})$& $O(h^{2})$& \textbf{Unstable!} & ---  & $O(n)$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{keybox}[Practical Recommendations]
+\begin{enumerate}
+  \item \textbf{Best accuracy \& stability} $\to$ Crank--Nicolson.
+  \item \textbf{Simple implementation, small grid} $\to$ Explicit FDM
+        (respect the CFL condition).
+  \item \textbf{Never use Leapfrog} for parabolic PDEs (BS equation,
+        heat equation).
+  \item For American options: use the implicit or Crank--Nicolson scheme
+        with the early-exercise constraint applied at each time step.
+\end{enumerate}
+\end{keybox}
+
+% ==============================================================
+\section{Homework Problems}
+\markboth{Homework}{}
+% ==============================================================
+
+\begin{hwbox}[Problem 1 -- Finite Difference Approximations]
+\textbf{(a)} Derive the central-difference approximation for $f''(x_{0})$,
+equation~\eqref{eq:second}, starting from Taylor expansions, and show
+explicitly that the truncation error is $O(h^{2})$.
+
+\textbf{(b)} For $f(x)=e^{x}$ at $x_{0}=1$, numerically compute $f'(x_{0})$
+using forward, backward, and central differences with $h=0.1,0.01,0.001$.
+Compare with the exact value $e^{1}$ and verify the convergence rates
+$O(h)$, $O(h)$, $O(h^{2})$ respectively by computing the error ratios.
+\end{hwbox}
+
+\begin{hwbox}[Problem 2 -- Explicit FDM Stability]
+Given: $\sigma=0.25$, $r=0.05$.
+
+\textbf{(a)} Compute the maximum allowable $h$ and $k$ for the explicit
+finite difference scheme using conditions~\eqref{eq:stab_exp}.
+
+\textbf{(b)} If $h=0.1$ is fixed, what is the maximum time step $k$?
+
+\textbf{(c)} Using von Neumann analysis, write down the amplification
+factor $G(\xi)$ for the explicit BS scheme.  For which values of
+$\alpha_{0}$ and $\beta_{0}$ does $|G|>1$?
+
+\textbf{(d)} Implement the explicit FDM in Python/MATLAB to price a
+European call with $S_{0}=100$, $K=100$, $T=1$.  Compare with the
+Black--Scholes formula.  What happens when you violate condition~\eqref{eq:stab_exp}?
+\end{hwbox}
+
+\begin{hwbox}[Problem 3 -- Leapfrog Instability (Proof)]
+Apply the leapfrog scheme $\displaystyle\frac{U^{j+1}-U^{j-1}}{2k}=-aU^{j}$
+to the model ODE $u_{t}=-au$ ($a>0$).
+
+\textbf{(a)} Derive the characteristic equation and find both roots
+$\phi_{1,2}$.
+
+\textbf{(b)} Prove rigorously that $|\phi_{2}|>1$ for all $ak>0$.
+
+\textbf{(c)} Given initial conditions $U^{0}=1$, $U^{1}=e^{-ak}$,
+find the coefficients $A,B$ in $U^{j}=A\phi_{1}^{j}+B\phi_{2}^{j}$
+and show $B\neq0$.  Conclude that $|U^{j}|\to\infty$ as $j\to\infty$.
+
+\textbf{(d)} Contrast with the true solution $u(t)\to0$ as $t\to\infty$.
+What does this tell you about using leapfrog for option pricing?
+\end{hwbox}
+
+\begin{hwbox}[Problem 4 -- Crank--Nicolson Stability and Accuracy]
+\textbf{(a)} Carry out the full von Neumann analysis for the
+Crank--Nicolson scheme~\eqref{eq:CN} applied to $u_{t}=u_{xx}$.
+Derive the amplification factor $G$ (equation~\eqref{eq:G_CN}) and
+prove $|G|\leq1$ for all $r_{CN}>0$.
+
+\textbf{(b)} Using the $\theta$-method~\eqref{eq:theta} applied to
+$u_{t}=-au$, derive the error expression~\eqref{eq:accuracy} in full.
+For which value of $\theta$ is the leading-order error minimised?
+
+\textbf{(c)} Show that the Crank--Nicolson scheme for the heat equation
+has truncation error $O(k^{2})+O(h^{2})$ by Taylor expansion.
+\end{hwbox}
+
+\begin{hwbox}[Problem 5 -- Tree--FDM Connection]
+\textbf{(a)} Verify that the CRR binomial tree satisfies both moment
+conditions (mean and variance of $\ln S_{t+\dt}$) to first order in
+$\dt$ using the CRR parameters $u=e^{\sigma\sqrt{\dt}}$,
+$d=e^{-\sigma\sqrt{\dt}}$.
+
+\textbf{(b)} Show that the explicit FDM coefficients $a,b,c$
+from~\eqref{eq:abc_exp} satisfy the trinomial tree moment conditions:
+\[
+  h(c-a)=\left(r-\tfrac{1}{2}\sigma^{2}\right)k,\qquad
+  h^{2}(a+c)=\sigma^{2}k.
+\]
+
+\textbf{(c)} Explain geometrically why the CFL condition $k\leq h^{2}/\sigma^{2}$
+is equivalent to requiring $p^{-},p,p^{+}\geq0$ in the trinomial tree.
+
+\textbf{(d)} The JR (Jarrow--Rudd) model assumes $p=\tfrac{1}{2}$:
+\[
+  u=e^{(r-\tfrac{1}{2}\sigma^{2})\dt+\sigma\sqrt{\dt}},\quad
+  d=e^{(r-\tfrac{1}{2}\sigma^{2})\dt-\sigma\sqrt{\dt}}.
+\]
+Verify this also satisfies both moment conditions and discuss its
+relation to the explicit FDM.
+\end{hwbox}
+
+\begin{hwbox}[Problem 6 -- Numerical Implementation (Programming)]
+Implement and compare the following methods for pricing a European call
+with $S_{0}=K=100$, $T=1$, $r=0.05$, $\sigma=0.2$:
+
+\textbf{(a)} Explicit FDM (ensure stability).\\
+\textbf{(b)} Implicit FDM (Gaussian elimination, tridiagonal solver).\\
+\textbf{(c)} Crank--Nicolson.\\
+\textbf{(d)} CRR binomial tree.
+
+For each method, plot the error versus the number of grid points $n$
+on a log--log scale.  What convergence orders do you observe?
+Compare with the theoretical predictions from the truncation error analysis.
+
+\emph{Hint:} For parts (a)--(c), set $y_{\min}=\ln(S_{0})-5$,
+$y_{\max}=\ln(S_{0})+5$, use $n=50,100,200,400$ spatial points.
+\end{hwbox}
+
+% ==============================================================
+\appendix
+% ==============================================================
+
+\section{Appendix A: Derivation of the Implicit Scheme Coefficients}
+\label{app:imp}
+
+Starting from~\eqref{eq:BSlog} with the implicit discretisations
+\eqref{eq:imp_wy}--\eqref{eq:imp_wt}:
+
+\[
+  \frac{1}{2}\sigma^{2}\!\cdot\!
+  \frac{W_{i+1,j}-2W_{i,j}+W_{i-1,j}}{h^{2}}
+  +\!\left(r-\tfrac{1}{2}\sigma^{2}\right)\!\cdot\!
+  \frac{W_{i+1,j}-W_{i-1,j}}{2h}
+  +\frac{W_{i,j+1}-W_{i,j}}{k}-rW_{i,j+1}=0.
+\]
+
+Multiply by $k$ and collect terms:
+
+\begin{align*}
+  \left(\frac{1}{k}-r\right)W_{i,j+1}
+  &= \left[-\frac{\sigma^{2}}{2h^{2}}+\frac{r-\tfrac{1}{2}\sigma^{2}}{2h}+\frac{1}{k}\right]W_{i,j}\\
+  &\quad+\left[-\frac{\sigma^{2}}{2h^{2}}-\frac{r-\tfrac{1}{2}\sigma^{2}}{2h}\right]W_{i+1,j}\\
+  &\quad+\left[-\frac{\sigma^{2}}{2h^{2}}+\frac{r-\tfrac{1}{2}\sigma^{2}}{2h}\right]W_{i-1,j}.
+\end{align*}
+
+Multiplying through by $k$ and rearranging into the form
+$aW_{i-1,j}+bW_{i,j}+cW_{i+1,j}=(1-rk)W_{i,j+1}$
+(note the sign convention in~\eqref{eq:implicit} uses $+rk$ with
+backward-in-time orientation) yields the coefficients~\eqref{eq:abc_imp}.
+
+\section{Appendix B: Full Proof of Stability for the $\theta$-Method}
+
+For $u_{t}=-au$ the $\theta$-method gives amplification
+$\lambda=(1-(1-\theta)ak)/(1+\theta ak)$.
+Stability requires $|\lambda|\leq1$.
+
+\textbf{Right bound} $\lambda\leq1$:
+\[
+  1-(1-\theta)ak\leq1+\theta ak
+  \;\Longleftrightarrow\; (1-2\theta)ak\leq0.
+\]
+For $a,k>0$ this holds when $\theta\geq\tfrac{1}{2}$.
+For $\theta<\tfrac{1}{2}$ it holds whenever $ak\leq2/(1-2\theta)$.
+
+\textbf{Left bound} $\lambda\geq-1$:
+\[
+  1-(1-\theta)ak\geq-(1+\theta ak)
+  \;\Longleftrightarrow\; 2\geq(1-2\theta)ak.
+\]
+
+\begin{keybox}[Stability Summary for $\theta$-Method]
+\begin{itemize}
+  \item $\theta\geq\tfrac{1}{2}$: unconditionally stable.
+  \item $0\leq\theta<\tfrac{1}{2}$: conditionally stable,
+        $ak\leq\dfrac{2}{1-2\theta}$.
+\end{itemize}
+In particular, $\theta=0$ (explicit) requires $ak\leq2$; for the
+heat equation in space this translates to the CFL condition~\eqref{eq:CFL}.
+\end{keybox}
+
+\section{Appendix C: Brennan--Schwartz (1978) -- Key Results}
+
+\textbf{Reference:} M.\ J.\ Brennan \& E.\ S.\ Schwartz,
+``Finite Difference Methods and Jump Processes Arising in the Pricing
+of Contingent Claims: A Synthesis,''
+\textit{J.\ Financial \& Quantitative Analysis}, 13(3), 461--474, 1978.
+
+\medskip
+\noindent\textbf{Main contributions:}
+\begin{enumerate}
+  \item Showed that solving the BS PDE by explicit FDM is \emph{numerically
+        equivalent} to approximating the GBM by a trinomial jump process
+        (Cox \& Ross 1976).
+  \item Showed that the implicit FDM corresponds to a more general jump
+        process; the resulting ``probabilities'' are non-negative under
+        mild conditions.
+  \item Established stability and accuracy conditions for both schemes
+        (equations~\eqref{eq:stab_exp} and~\eqref{eq:imp_moments}).
+\end{enumerate}
+
+\end{document}
